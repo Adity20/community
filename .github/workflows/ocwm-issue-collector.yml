@@ -97,6 +97,10 @@ jobs:
                         let json_text = JSON.stringify(body.substring(0, startIndex - 1) + `\n| ${url} - ${title} | ${author} |\r\n` + body.substring(startIndex, body.length));
                         body = JSON.parse(json_text);
                         changesFlag = true;
+
+                    //Remove the 'agenda' label from the discussion
+                    let labelID = items2add[i].labels.find(label => label.name === process.env.AGENDA_LABEL).id;
+                    await removeLabelFromIssue(items2add[i].number, labelID);
                     }
                 }
 
@@ -111,8 +115,12 @@ jobs:
                     let json_text = JSON.stringify(body.substring(0, startIndex - 1) + `\n| ${url} - ${title} | ${author} |\r\n` + body.substring(startIndex, body.length));
                     body = JSON.parse(json_text);
                     changesFlag = true;
+                    // Remove the 'agenda' label from the discussion
+                    let labelID = discussions[i].node.labels.find(label => label.name === process.env.AGENDA_LABEL).id;
+                    await removeLabelFromDiscussion(discussions[i].node.resourcePath, labelID);
                   }
                 }
+                
 
                 if (changesFlag){
                   let template = JSON.stringify(JSON.stringify(body));
@@ -125,6 +133,29 @@ jobs:
                     milestone: null,
                     state: 'open',
                   })
+                }
+                async function getLabelID(issue_number, labelName) {
+                  const { data: labels } = await mygithub.request(`GET /repos/${process.env.OWNER}/${repositories[r]}/issues/${issue_number}/labels`);
+                  return labels.find(label => label.name === labelName).id;
+                }
+
+                // Function to remove a label from a discussion
+                async function removeLabelFromDiscussion(discussionId, labelId){
+                  let mutation = `
+                    mutation {$input:
+                      RemoveLabelsFromLabelableInput!{
+                        removeLabelsFromLabelable(input:$input){
+                          clientMutationId
+                        }
+                      }
+                    }`;
+                  let variables = {
+                    input: {
+                      labelableId: discussionId,
+                      labelIds: [labelId]    
+                    }
+                };
+                await mygithub.graphql(mutation, variables);
                 }
             }
             catch (err) {
