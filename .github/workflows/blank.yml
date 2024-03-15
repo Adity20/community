@@ -1,18 +1,72 @@
-name: GitHub Actions Demo
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
-on: [push]
+name: Search for issues and PR labeled 'agenda' and add them to the agenda
+
+on:
+  workflow_dispatch:
+
 jobs:
-  Explore-GitHub-Actions:
+  search_and_add:
     runs-on: ubuntu-latest
+
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v4
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
-        run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install @octokit/request@5
+
+    - name: Add to agenda and remove 'agenda' label
+      uses: actions/github-script@v6
+      env: 
+        MY_TOKEN: ${{ secrets.PAT_KEY }}
+      with: 
+        script: |
+          const { request } = require('@octokit/request');
+  
+          const accessToken = process.env.MY_TOKEN;
+          const owner = 'Adity20';
+          const repo = 'Community';
+          const appendLabel = 'agenda';
+  
+          for (let i = 0; i < items2add.length; i++) {
+            let url = items2add[i].html_url;
+            let author = "@" + items2add[i].user.login;
+            let title = items2add[i].title;
+            let search = parseInt(JSON.stringify(body).search(url));
+            if (search === -1) {
+              let startIndex = parseInt(JSON.stringify(body.indexOf(placeholder)))
+              let json_text = JSON.stringify(body.substring(0, startIndex - 1) + `\n| ${url} - ${title} | ${author} |\r\n` + body.substring(startIndex, body.length));
+              body = JSON.parse(json_text);
+              changesFlag = true;
+
+              // Get the ID of the 'agenda' label
+              let labelResponse = await request(`GET /repos/${owner}/${repo}/labels/${appendLabel}`, {
+                headers: {
+                  authorization: `token ${accessToken}`,
+                  accept: 'application/vnd.github.v3+json',
+                },
+              });
+              let labelId = labelResponse.data.node_id;
+
+              // Remove the 'agenda' label from the added issue
+              const issueNumber = items2add[i].number;
+              const mutation = `
+                mutation ($input: RemoveLabelsFromLabelableInput!) {
+                  removeLabelsFromLabelable(input: $input) {
+                    clientMutationId
+                  }
+                }
+              `;
+              const variables = {
+                input: {
+                  labelIds: [labelId],
+                  labelableId: `MDU6SXNzdWU${issueNumber}`
+                }
+              };
+              await mygithub.graphql(mutation, variables);
+            }
+          }
