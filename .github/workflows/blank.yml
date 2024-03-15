@@ -1,12 +1,11 @@
-name: Search for issues and PR labeled 'agenda' and add them to the agenda
+name: Remove 'agenda' label from discussions
 
 on:
   workflow_dispatch:
 
 jobs:
-  search_and_add:
+  remove_agenda_label:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -16,34 +15,65 @@ jobs:
       with:
         node-version: '18'
 
-    - name: Install dependencies
+    - name: Install @octokit/request
       run: npm install @octokit/request@5
 
-    - name: Remove 'agenda' label from discussion
-      uses: actions/github-script@v6
-      env: 
-        MY_TOKEN: ${{ secrets.PAT_KEY }}
-      with: 
+    - name: Remove 'agenda' label from discussions
+      uses: actions/github-script@v4
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const { request } = require('@octokit/request');
-  
-          const accessToken = process.env.MY_TOKEN;
-          const owner = 'Adity20';
-          const repo = 'Community';
-          const issueNumber = 3;
-          const appendLabel = 'agenda';
-  
-          try {
-            await request({
-              method: 'DELETE',
-              url: `/repos/${owner}/${repo}/issues/${issueNumber}/labels/${appendLabel}`,
-              headers: {
-                authorization: `token ${accessToken}`,
-                accept: 'application/vnd.github.v3+json',
-              },
-            });
-            console.log('Label removed successfully.');
-          } catch (error) {
-            console.error('Error removing label:', error.message);
+
+          async function removeAgendaLabel() {
+            try {
+              const { data: discussions } = await request("POST /graphql", {
+                headers: {
+                  authorization: `token ${process.env.GITHUB_TOKEN}`,
+                  accept: "application/vnd.github.v4.idl",
+                },
+                query: `
+                  query ($owner: String!, $repo: String!, $label: String!) {
+                    repository(owner: $owner, name: $repo) {
+                      discussions(labels: [$label], first: 10) {
+                        nodes {
+                          id
+                          title
+                        }
+                      }
+                    }
+                  }
+                `,
+                owner: process.env.REPO_OWNER,
+                repo: process.env.REPO_NAME,
+                label: 'agenda'
+              });
+
+              for (const discussion of discussions.repository.discussions.nodes) {
+                await request("POST /graphql", {
+                  headers: {
+                    authorization: `token ${process.env.GITHUB_TOKEN}`,
+                    accept: "application/vnd.github.v4.idl",
+                  },
+                  query: `
+                    mutation ($discussionId: ID!, $labelId: String!) {
+                      removeLabelsFromDiscussion(input: {id: $discussionId, labelIds: [$labelId]}) {
+                        clientMutationId
+                      }
+                    }
+                  `,
+                  discussionId: discussion.id,
+                  labelId: 'agenda'
+                });
+                console.log(`'agenda' label removed from discussion: ${discussion.title}`);
+              }
+            } catch (error) {
+              console.error(error);
+              process.exit(1);
+            }
           }
-  
+
+          removeAgendaLabel();
+      env:
+        REPO_OWNER: Adity20
+        REPO_NAME: Community
