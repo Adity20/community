@@ -31,6 +31,8 @@ jobs:
       with:
         script: |
           const octokit = require('@octokit/core').Octokit  
+          const { request } = require('@octokit/request');
+          const { graphql } = require('@octokit/graphql');
           const mygithub = new octokit({
             request: { fetch: fetch,},
             auth: process.env.MY_TOKEN
@@ -81,6 +83,41 @@ jobs:
             
             const discussions = response.search.edges;
             console.log("Discussions to add:" + JSON.stringify(discussions));
+            async function removeLabel() {
+          try {
+            // Get the ID of the 'agenda' label
+            const labelResponse = await request(`GET /repos/${owner}/${repo}/labels/${appendLabel}`, {
+              headers: {
+                authorization: `token ${accessToken}`,
+                accept: 'application/vnd.github.v3+json',
+              },
+            });
+            const labelId = labelResponse.data.node_id;
+        
+            // Remove the 'agenda' label from the issue
+            const mutation = `
+              mutation ($input: RemoveLabelsFromLabelableInput!) {
+                removeLabelsFromLabelable(input: $input) {
+                  clientMutationId
+                }
+              }
+            `;
+            const variables = {
+              input: {
+                labelIds: [labelId],
+                labelableId: `MDU6SXNzdWU${issueNumber}`
+              }
+            };
+            await graphql(mutation, variables, {
+              headers: {
+                authorization: `token ${accessToken}`,
+              },
+            });
+            console.log('Label removed successfully.');
+          } catch (error) {
+            console.error('Error removing label:', error.message);
+          }
+          }
 
             try {
                 let body = workMeetings[0].body;
@@ -97,6 +134,7 @@ jobs:
                         let json_text = JSON.stringify(body.substring(0, startIndex - 1) + `\n| ${url} - ${title} | ${author} |\r\n` + body.substring(startIndex, body.length));
                         body = JSON.parse(json_text);
                         changesFlag = true;
+                        removeLabel();
                     }
                 }
 
